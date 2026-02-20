@@ -8,8 +8,8 @@ langchain.llm_cache = None
 import argparse
 import json
 from telebot.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
-import asyncio
-
+from time import sleep
+import requests
 
 
 bot = telebot.TeleBot(' ')
@@ -20,6 +20,7 @@ user_contexts = {}
 observer = ObserverAgent(api_key)
 interviewer = InterviewerAgent(api_key)
 summary_agent = SummaryAgent(api_key)
+
 
 
 @bot.message_handler(commands=["start"])
@@ -117,31 +118,18 @@ def handle_experience(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     user_id = str(call.from_user.id)
+    context = user_contexts[user_id]
 
     if call.data == 'start_interview':
         bot.answer_callback_query(callback_query_id=call.id, show_alert=False, text="Интервью начато!")
-        context = user_contexts[user_id]
+
         start_interview(user_id, context)
 
     elif call.data == 'edit_data':
         #Возвращаемся к началу
         bot.answer_callback_query(callback_query_id=call.id, show_alert=False, text="Вы можете изменить данные.")
-        #edit_data(user_id)
-
-
-'''
-# Обработка нажатия кнопки для начала интервью
-@bot.callback_query_handler(func=lambda call: call.data == 'start_interview')
-def start_interview_callback(call):
-    user_id = str(call.from_user.id)
-    context = user_contexts.get(user_id)
-    if context is None or context['finished']:
-        bot.answer_callback_query(callback_query_id=call.id, show_alert=True, text='Интервью завершилось.')
-        return
-
-    bot.answer_callback_query(callback_query_id=call.id)
-    start_interview(call.message, context)
-'''
+        last_message = context.get("last_message")
+        handle_start(last_message)
 
 
 def start_interview(user_id, context):
@@ -183,15 +171,11 @@ def process_answer(message):
 
 
 
-from time import sleep
-import requests
-
 if __name__ == "__main__":
-    bot.polling(non_stop=True)
-    '''
-    while True:
-        response = requests.get("https://t.me/NLPRecruit_bot")
-        for message in response:
-            bot.answer(message)
-            sleep(1)
-'''
+    #bot.polling(non_stop=True)
+
+    print("Запуск")
+    try:
+        bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")

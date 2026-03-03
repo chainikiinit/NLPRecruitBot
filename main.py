@@ -10,18 +10,13 @@ import json
 from telebot.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from time import sleep
 import requests
+from Tools import build_tools
 
 
-bot = telebot.TeleBot(' ')
-api_key = ' '
+bot = telebot.TeleBot('')
+api_key = ''
 
 user_contexts = {}
-
-observer = ObserverAgent(api_key)
-interviewer = InterviewerAgent(api_key)
-summary_agent = SummaryAgent(api_key)
-
-
 
 @bot.message_handler(commands=["start"])
 def handle_start(message):
@@ -30,6 +25,7 @@ def handle_start(message):
     if user_id in user_contexts:
         del user_contexts[user_id]
     user_contexts[user_id] = {
+        "id": 1,
         "candidate_name": message.from_user.first_name + " " + message.from_user.last_name,
         "position": "",
         "grade": "",
@@ -37,8 +33,36 @@ def handle_start(message):
         "history": [],
         "last_user_message": "",
         "last_agent_message": "",
-        "finished": False
+        "finished": False,
+        "interviewer_signal": "",
+        "difficulty": "easy",
+        "hallucinations": 0,
     }
+    context = user_contexts[user_id]
+    tools = build_tools(context)
+
+    observer_tools = [
+        t for t in tools
+        if t.name in ["mark_hallucination", "send_signal_to_interviewer", "change_difficulty"]
+    ]
+
+    interviewer_tools = [
+        t for t in tools
+        if t.name in ["end_interview"]
+    ]
+
+    global logger
+    logger = Logger(context['candidate_name'])
+
+    global observer
+    observer = ObserverAgent(api_key, observer_tools)
+
+    global interviewer
+    interviewer = InterviewerAgent(api_key, interviewer_tools)
+
+    global summary_agent
+    summary_agent = SummaryAgent(api_key)
+
     bot.reply_to(message, "Добро пожаловать! \nЭто бот для проведения собеседования с помощью LLM на основе твоих навыков! Чтобы начать интервью ответьте на 3 вопроса.\n1. Введите название вашей позиции. Например: Solution Architect")
     bot.register_next_step_handler(message, handle_position)
 
@@ -119,6 +143,7 @@ def handle_experience(message):
 def handle_callback(call):
     user_id = str(call.from_user.id)
     context = user_contexts[user_id]
+    context["turn_id"] = 1
 
     if call.data == 'start_interview':
         bot.answer_callback_query(callback_query_id=call.id, show_alert=False, text="Интервью начато!")
@@ -129,19 +154,19 @@ def handle_callback(call):
         #Возвращаемся к началу
         bot.answer_callback_query(callback_query_id=call.id, show_alert=False, text="Вы можете изменить данные.")
         last_message = context.get("last_message")
+
         handle_start(last_message)
 
 
 def start_interview(user_id, context):
     last_message = context.get("last_message")
 
-    #context = user_contexts[user_id]
     if not context:
         bot.send_message(user_id, "Контекст потерян. Попробуйте снова /start.")
         return
 
-    logger = Logger(context["candidate_name"])
-    observer_thoughts = "Начало интервью. Поздоровайтесь и спросите о кандидате."
+
+    observer_thoughts = "Начало интервью. Поздоровайся и попроси рассказать о себе"
     internal_combined = observer_thoughts
     agent_message = interviewer.ask_question(context, internal_combined)
     bot.send_message(user_id, agent_message)
@@ -149,10 +174,34 @@ def start_interview(user_id, context):
 
 def process_answer(message):
     user_id = str(message.from_user.id)
+    if user_id not in user_contexts:
+        bot.send_message(user_id, "Контекст потерян. Попробуйте снова /start")
+        return
+
     context = user_contexts[user_id]
     user_message = message.text.strip()
-    context["last_user_message"] = user_message
-    context["history"].append({"agent": context["last_agent_message"], "user": user_message})
+    context["last_user_message"] = message
+    context["history"].append({
+        "interviewer": context["last_agent_message"],
+        "user": user_message
+    })
+
+    observer_thoughts = observer.analyze(context)
+    internal_combined = f"[Observer]: {observer_thoughts}+\n"
+    context["history"][-1] = {
+        "interviewer": context["last_agent_message"],
+        "user": user_message,
+        "observer": observer_thoughts
+    }
+
+    logger.record_turn(
+        turn_id=context["turn_id"],
+        agent_visible_message=context["last_agent_message"],
+        user_message=user_message,
+        internal_thoughts=internal_combined
+    )
+
+    context["id"] += 1
 
     if user_message.lower() == "стоп":
         context["finished"] = True
@@ -161,14 +210,22 @@ def process_answer(message):
         del user_contexts[user_id]
         return
 
-    observer_thoughts = observer.analyze(context)
-    interviewer_thoughts = interviewer.reflect(context, observer_thoughts)
-    internal_combined = f"[Observer]: {observer_thoughts}+\n [Interviewer]: {interviewer_thoughts}+\n"
+
+
+    if context.get("finished"):
+        final_summary = summary_agent.summarize(context)
+        logger.set_final_feedback(final_summary)
+        logger.save_to_file()
+        bot.send_message(user_id, final_summary)
+        del user_contexts[user_id]
+        return
+
     next_agent_message = interviewer.ask_question(context, internal_combined)
+
+
     bot.send_message(user_id, next_agent_message)
     context["last_agent_message"] = next_agent_message
     bot.register_next_step_handler(message, process_answer)
-
 
 
 if __name__ == "__main__":

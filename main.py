@@ -28,7 +28,7 @@ def handle_start(message):
         del user_contexts[user_id]
     user_contexts[user_id] = {
         "id": 1,
-        "candidate_name": message.from_user.first_name + " " + message.from_user.last_name,
+        "candidate_name": message.from_user.first_name,
         "position": "",
         "grade": "",
         "experience": "",
@@ -238,3 +238,4 @@ if __name__ == "__main__":
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
     except Exception as e:
         print(f"Произошла ошибка: {e}")
+

@@ -16,13 +16,14 @@ class InterviewerAgent:
                     - Формулируй **только один вопрос** для кандидата за раз, понятный и конкретный.
                     - Старайся связывать вопросы логически: предыдущий вопрос+предыдущий ответ → следующий вопрос.
                     - Если нужно изменить состояние интервью — используй инструменты внутренне, не показывай tool_call пользователю.
-                    - Если пользователь отказывется отвечать более 2 раз→ вызови инструмент:end_interview(reason="Пользователь не отвечает")
+                    - Если пользователь отказывется отвечать более 5 раз→ вызови инструмент:end_interview(reason="Пользователь не отвечает")
+                    - Если если в question_count написано первый вопрос, то не используй никакие инструменты
                     - Обязательно если в question_count написано закончить интервью-> вызови инструмент:end_interview(reason="Конец интервью") """),
             ("human", """Позиция: {position} Грейд: {grade} Опыт: {experience} Совет Observer: {thoughts} История последних ходов: {history} Сложность вопроса:{difficulty} Сигнал Observer:{signal} question_count:{question_count}""")
         ])
 
   def ask_question(self, context, thoughts):
-        question_count=''
+        if context['id']<3:question_count='Первый вопрос'
         if context['id']>15:question_count='Закончи интервью'
         messages=self.prompt_question.format_messages(
                 position=context["position"],
@@ -75,6 +76,7 @@ class SummaryAgent:
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", """Ты аналитик интервью. Сделай структурированный отчёт по истории интервью. 
             При составлении отчёта учти количество галлюцинаций и оценку ответов от Observer.
+            Если информации мало, не выдумывай, строго анализируй интервью.
             Oцени кандидата на соответвие позиции и грейду.  Используй план: 
             1) Decision (Грейд, Рекомендация для найма, Уверенность в оценке)
             2) Hard Skills: Confirmed Skills и Knowledge Gaps

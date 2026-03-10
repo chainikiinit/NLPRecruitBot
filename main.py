@@ -39,6 +39,7 @@ def handle_start(message):
         "interviewer_signal": "",
         "difficulty": "easy",
         "hallucinations": 0,
+        "hire": "да",
     }
     context = user_contexts[user_id]
     tools = build_tools(context)
@@ -197,7 +198,7 @@ def process_answer(message):
     }
 
     logger.record_turn(
-        turn_id=context["turn_id"],
+        turn_id=context["id"],
         agent_visible_message=context["last_agent_message"],
         user_message=user_message,
         internal_thoughts=internal_combined

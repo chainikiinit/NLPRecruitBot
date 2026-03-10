@@ -17,15 +17,15 @@ class InterviewerAgent:
                     - Старайся связывать вопросы логически: предыдущий вопрос+предыдущий ответ → следующий вопрос.
                     - Если нужно изменить состояние интервью — используй инструменты внутренне, не показывай tool_call пользователю.
                     - Если пользователь отказывется отвечать более 5 раз→ вызови инструмент:end_interview(reason="Пользователь не отвечает")
-                    - Если если в question_count написано первый вопрос, то не используй никакие инструменты
+                    - ВАЖНО если в question_count написано первый вопрос, задай вопрос кандидату и НЕ завершай интервью.
                     - Обязательно если в question_count написано закончить интервью-> вызови инструмент:end_interview(reason="Конец интервью") """),
             ("human", """Позиция: {position} Грейд: {grade} Опыт: {experience} Совет Observer: {thoughts} История последних ходов: {history} Сложность вопроса:{difficulty} Сигнал Observer:{signal} question_count:{question_count}""")
         ])
 
   def ask_question(self, context, thoughts):
-        question_count=''
-        if context['id']<3:question_count='Первый вопрос'
-        if context['id']>15:question_count='Закончи интервью'
+        question_count='обычный вопрос'
+        if context['id']<3:question_count='первый вопрос'
+        elif context['id'] > 15: question_count = 'закончить интервью'
         messages=self.prompt_question.format_messages(
                 position=context["position"],
                 grade=context["grade"],
@@ -77,12 +77,13 @@ class SummaryAgent:
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", """Ты аналитик интервью. Сделай структурированный отчёт по истории интервью. 
             При составлении отчёта учти количество галлюцинаций и оценку ответов от Observer.
+            Если кандидат много отвечал не по теме или отвечал мало и неверно, то он не может быть нанят.
             Если информации мало, не выдумывай, строго анализируй интервью.
             Oцени кандидата на соответвие позиции и грейду.  Используй план: 
-            1) Decision (Грейд, Рекомендация для найма, Уверенность в оценке)
-            2) Hard Skills: Confirmed Skills и Knowledge Gaps
-            3) Soft Skills: Clarity, Honesty, Engagement
-            4) Roadmap для кандидата
+            1) Decision Должны быть эти поля: Грейд, Рекомендация для найма (Выбери из [да/нет]), Уверенность в оценке
+            2) Hard Skills: Подтвержденные навыки и Пробелы в знаниях
+            3) Soft Skills: Ясность, Честность, Вовлеченность
+            4) Советы(roadmap) для кандидата
             Сделай кратко и полезно для обучения."""),
             ("human", """История интервью: {history} Грейд: {grade} Позиция:{position} Галлюцинации:{hallucination} """)
         ])
@@ -96,5 +97,7 @@ class SummaryAgent:
                 position=context["position"],
             )
         )
+        if "Рекомендация для найма: нет" in response.content.strip():
+            context['hire'] = "нет"
 
         return response.content.strip()
